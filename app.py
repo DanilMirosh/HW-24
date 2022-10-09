@@ -1,27 +1,34 @@
-# import os
-#
-# from flask import Flask
-#
-# app = Flask(__name__)
-#
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# DATA_DIR = os.path.join(BASE_DIR, "data")
-#
-#
-# @app.route("/perform_query")
-# def perform_query():
-#     # получить параметры query и file_name из request.args, при ошибке вернуть ошибку 400
-#     # проверить, что файла file_name существует в папке DATA_DIR, при ошибке вернуть ошибку 400
-#     # с помощью функционального программирования (функций filter, map), итераторов/генераторов сконструировать запрос
-#     # вернуть пользователю сформированный результат
-#     return app.response_class('', content_type="text/plain")
-from flask import Flask
+import os
 
-from views import main_bp
+from flask import Flask, request, abort
+from marshmallow.exceptions import ValidationError
+
+from resource import utils
+from resource.commands import CommandsSchema, Commands
+from resource.constants import DATA_DIR
+
+app = Flask(__name__)
 
 
-def create_app():
-    app = Flask(__name__)
-    app.register_blueprint(main_bp)
+@app.route("/perform_query/", methods=['GET', 'POST'])
+def perform_query():
+    try:
+        # Получаем и проверяем данные, проверяем существует ли файл
+        commands: Commands = CommandsSchema().load(request.args)
+        file_path: str = os.path.join(DATA_DIR, commands.file_name)
 
-    return app
+        if not os.path.exists(file_path):
+            raise FileNotFoundError('Wrong filename passed')
+
+        # Выполняем переданные команды и возвращаем результаты в ответ
+        with open(file_path, 'r') as file:
+            cmd1_result = getattr(utils, commands.cmd1)(file, commands.value1)
+            cmd2_result = getattr(utils, commands.cmd2)(cmd1_result, commands.value2)
+            return app.response_class('\n'.join([line.strip() for line in cmd2_result]), content_type="text/plain")
+
+    except (ValueError, FileNotFoundError, TypeError, IndexError, ValidationError) as e:
+        abort(400, e)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
